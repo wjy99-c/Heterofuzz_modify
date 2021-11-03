@@ -98,14 +98,14 @@
 /* Allocate a buffer, explicitly not zeroing it. Returns NULL for zero-sized
    requests. */
 
-static inline void* DFL_ck_alloc_nozero(u32 size) {
+static inline unsigned char* DFL_ck_alloc_nozero(u32 size) {
 
-  void* ret;
+  unsigned char* ret;
 
   if (!size) return NULL;
 
   ALLOC_CHECK_SIZE(size);
-  ret = malloc(size + ALLOC_OFF_TOTAL);
+  ret = (unsigned char*)malloc(size + ALLOC_OFF_TOTAL);
   ALLOC_CHECK_RESULT(ret, size);
 
   ret += ALLOC_OFF_HEAD;
@@ -121,14 +121,14 @@ static inline void* DFL_ck_alloc_nozero(u32 size) {
 
 /* Allocate a buffer, returning zeroed memory. */
 
-static inline void* DFL_ck_alloc(u32 size) {
+static inline unsigned char* DFL_ck_alloc(u32 size) {
 
-  void* mem;
+  unsigned char* mem;
 
   if (!size) return NULL;
   mem = DFL_ck_alloc_nozero(size);
 
-  return memset(mem, 0, size);
+  return (unsigned char*)memset(mem, 0, size);
 
 }
 
@@ -136,7 +136,7 @@ static inline void* DFL_ck_alloc(u32 size) {
 /* Free memory, checking for double free and corrupted heap. When DEBUG_BUILD
    is set, the old memory will be also clobbered with 0xFF. */
 
-static inline void DFL_ck_free(void* mem) {
+static inline void DFL_ck_free(unsigned char* mem) {
 
   if (!mem) return;
 
@@ -160,9 +160,9 @@ static inline void DFL_ck_free(void* mem) {
    With DEBUG_BUILD, the buffer is always reallocated to a new addresses and the
    old memory is clobbered with 0xFF. */
 
-static inline void* DFL_ck_realloc(void* orig, u32 size) {
+static inline unsigned char* DFL_ck_realloc(unsigned char* orig, u32 size) {
 
-  void* ret;
+  unsigned char* ret;
   u32   old_size = 0;
 
   if (!size) {
@@ -191,7 +191,7 @@ static inline void* DFL_ck_realloc(void* orig, u32 size) {
 
 #ifndef DEBUG_BUILD
 
-  ret = realloc(orig, size + ALLOC_OFF_TOTAL);
+  ret = (unsigned char*)realloc(orig, size + ALLOC_OFF_TOTAL);
   ALLOC_CHECK_RESULT(ret, size);
 
 #else
@@ -232,7 +232,7 @@ static inline void* DFL_ck_realloc(void* orig, u32 size) {
 /* Re-allocate a buffer with ALLOC_BLK_INC increments (used to speed up
    repeated small reallocs without complicating the user code). */
 
-static inline void* DFL_ck_realloc_block(void* orig, u32 size) {
+static inline unsigned char* DFL_ck_realloc_block(unsigned char* orig, u32 size) {
 
 #ifndef DEBUG_BUILD
 
@@ -257,7 +257,7 @@ static inline void* DFL_ck_realloc_block(void* orig, u32 size) {
 
 static inline u8* DFL_ck_strdup(u8* str) {
 
-  void* ret;
+  unsigned char* ret;
   u32   size;
 
   if (!str) return NULL;
@@ -265,7 +265,7 @@ static inline u8* DFL_ck_strdup(u8* str) {
   size = strlen((char*)str) + 1;
 
   ALLOC_CHECK_SIZE(size);
-  ret = malloc(size + ALLOC_OFF_TOTAL);
+  ret = (unsigned char*)malloc(size + ALLOC_OFF_TOTAL);
   ALLOC_CHECK_RESULT(ret, size);
 
   ret += ALLOC_OFF_HEAD;
@@ -274,7 +274,7 @@ static inline u8* DFL_ck_strdup(u8* str) {
   ALLOC_S(ret)  = size;
   ALLOC_C2(ret) = ALLOC_MAGIC_C2;
 
-  return memcpy(ret, str, size);
+  return (unsigned char*)memcpy(ret, str, size);
 
 }
 
@@ -282,14 +282,14 @@ static inline u8* DFL_ck_strdup(u8* str) {
 /* Create a buffer with a copy of a memory block. Returns NULL for zero-sized
    or NULL inputs. */
 
-static inline void* DFL_ck_memdup(void* mem, u32 size) {
+static inline unsigned char* DFL_ck_memdup(unsigned char* mem, u32 size) {
 
-  void* ret;
+  unsigned char* ret;
 
   if (!mem || !size) return NULL;
 
   ALLOC_CHECK_SIZE(size);
-  ret = malloc(size + ALLOC_OFF_TOTAL);
+  ret = (unsigned char*)(size + ALLOC_OFF_TOTAL);
   ALLOC_CHECK_RESULT(ret, size);
   
   ret += ALLOC_OFF_HEAD;
@@ -298,7 +298,7 @@ static inline void* DFL_ck_memdup(void* mem, u32 size) {
   ALLOC_S(ret)  = size;
   ALLOC_C2(ret) = ALLOC_MAGIC_C2;
 
-  return memcpy(ret, mem, size);
+  return (unsigned char*)memcpy(ret, mem, size);
 
 }
 
@@ -313,7 +313,7 @@ static inline u8* DFL_ck_memdup_str(u8* mem, u32 size) {
   if (!mem || !size) return NULL;
 
   ALLOC_CHECK_SIZE(size);
-  ret = malloc(size + ALLOC_OFF_TOTAL + 1);
+  ret = (unsigned char*)malloc(size + ALLOC_OFF_TOTAL + 1);
   ALLOC_CHECK_RESULT(ret, size);
   
   ret += ALLOC_OFF_HEAD;
@@ -384,7 +384,7 @@ extern u32 TRK_cnt[ALLOC_BUCKETS];
 
 /* Add a new entry to the list of allocated objects. */
 
-static inline void TRK_alloc_buf(void* ptr, const char* file, const char* func,
+static inline void TRK_alloc_buf(unsigned char* ptr, const char* file, const char* func,
                                  u32 line) {
 
   u32 i, bucket;
@@ -424,7 +424,7 @@ static inline void TRK_alloc_buf(void* ptr, const char* file, const char* func,
 
 /* Remove entry from the list of allocated objects. */
 
-static inline void TRK_free_buf(void* ptr, const char* file, const char* func,
+static inline void TRK_free_buf(unsigned char* ptr, const char* file, const char* func,
                                 u32 line) {
 
   u32 i, bucket;
@@ -469,20 +469,20 @@ static inline void TRK_report(void) {
 
 /* Simple wrappers for non-debugging functions: */
 
-static inline void* TRK_ck_alloc(u32 size, const char* file, const char* func,
+static inline unsigned char* TRK_ck_alloc(u32 size, const char* file, const char* func,
                                  u32 line) {
 
-  void* ret = DFL_ck_alloc(size);
+  unsigned char* ret = DFL_ck_alloc(size);
   TRK_alloc_buf(ret, file, func, line);
   return ret;
 
 }
 
 
-static inline void* TRK_ck_realloc(void* orig, u32 size, const char* file,
+static inline unsigned char* TRK_ck_realloc(unsigned char* orig, u32 size, const char* file,
                                    const char* func, u32 line) {
 
-  void* ret = DFL_ck_realloc(orig, size);
+  unsigned char* ret = DFL_ck_realloc(orig, size);
   TRK_free_buf(orig, file, func, line);
   TRK_alloc_buf(ret, file, func, line);
   return ret;
@@ -490,10 +490,10 @@ static inline void* TRK_ck_realloc(void* orig, u32 size, const char* file,
 }
 
 
-static inline void* TRK_ck_realloc_block(void* orig, u32 size, const char* file,
+static inline unsigned char* TRK_ck_realloc_block(unsigned char* orig, u32 size, const char* file,
                                          const char* func, u32 line) {
 
-  void* ret = DFL_ck_realloc_block(orig, size);
+  unsigned char* ret = DFL_ck_realloc_block(orig, size);
   TRK_free_buf(orig, file, func, line);
   TRK_alloc_buf(ret, file, func, line);
   return ret;
@@ -501,37 +501,37 @@ static inline void* TRK_ck_realloc_block(void* orig, u32 size, const char* file,
 }
 
 
-static inline void* TRK_ck_strdup(u8* str, const char* file, const char* func,
+static inline unsigned char* TRK_ck_strdup(u8* str, const char* file, const char* func,
                                   u32 line) {
 
-  void* ret = DFL_ck_strdup(str);
+  unsigned char* ret = DFL_ck_strdup(str);
   TRK_alloc_buf(ret, file, func, line);
   return ret;
 
 }
 
 
-static inline void* TRK_ck_memdup(void* mem, u32 size, const char* file,
+static inline unsigned char* TRK_ck_memdup(unsigned char* mem, u32 size, const char* file,
                                   const char* func, u32 line) {
 
-  void* ret = DFL_ck_memdup(mem, size);
+  unsigned char* ret = DFL_ck_memdup(mem, size);
   TRK_alloc_buf(ret, file, func, line);
   return ret;
 
 }
 
 
-static inline void* TRK_ck_memdup_str(void* mem, u32 size, const char* file,
+static inline unsigned char* TRK_ck_memdup_str(unsigned char* mem, u32 size, const char* file,
                                       const char* func, u32 line) {
 
-  void* ret = DFL_ck_memdup_str(mem, size);
+  unsigned char* ret = DFL_ck_memdup_str(mem, size);
   TRK_alloc_buf(ret, file, func, line);
   return ret;
 
 }
 
 
-static inline void TRK_ck_free(void* ptr, const char* file,
+static inline void TRK_ck_free(unsigned char* ptr, const char* file,
                                 const char* func, u32 line) {
 
   TRK_free_buf(ptr, file, func, line);

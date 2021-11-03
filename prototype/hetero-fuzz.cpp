@@ -150,7 +150,7 @@ static void usage(char* argv0) {
 static void save_cmdline(u32 argc, char** argv) {
 
   u32 len = 1, i;
-  char* buf;
+  unsigned char* buf;
 
   for (i = 0; i < argc; i++)
     len += strlen(argv[i]) + 1;
@@ -180,6 +180,19 @@ std::string random_replace(const std::string &str) {
   c ^= (1 << rand() % 7);
   std::string ret(str);
   ret[pos] = c;
+  return ret;
+}
+
+std::string random_delete(const std::string &str) {
+  srand(time(NULL));
+  int n = str.size();
+  int pos_e = rand() % n;
+  
+  int pos_b = rand() % pos_e;
+  printf("delete position begin %d",pos_b);
+  printf("delete position end %d",pos_e);
+  std::string ret(str);
+  ret.erase(pos_b,pos_e-pos_b);
   return ret;
 }
 
@@ -221,17 +234,21 @@ std::string mutate(int fuzzing_iteration, std::string current_input){
   //std::cout << content;
   //printf("length %d\n", content.length());
 
-  srand(time(0) + rand());
+  srand(time(NULL) + rand());
   //int knob = selection();
   //std::cout << s << std::endl;
-  int knob = rand()%2+1;
+  int knob = rand()%5+1;
   std::cout << knob << std::endl;
   if(knob == 1){
     srand(time(0) + rand());
-    int pos = rand()%(content.length()-1);
-  //  printf("selected pos: %d\n", pos);
+    int pos = rand()%(content.length()-1); //TBD: modify, only change the matrix element
     u8 new_value = rand()%256;
+    while (isdigit(content[pos])==0){
+      pos = rand()%(content.length()-1);
+    }
+    printf("selected pos: %d\n", pos);
     content[pos] = new_value;
+    printf("%s\nend",content.c_str());
   }
   else if(knob == 2){
     content = random_append_int(content);
@@ -244,9 +261,7 @@ std::string mutate(int fuzzing_iteration, std::string current_input){
     u8 new_value = '/n';
     content[pos] = new_value;
   }else{
-    int pos = rand()%(content.length()-1);
-    u8 new_value = rand()%256;
-    content[pos] = new_value;
+    content = random_delete(content);
   }
 
   std::string mutated_input = std::string(out_dir) + std::to_string(fuzzing_iteration);
@@ -336,6 +351,15 @@ int check_new_hardware(){
     ret_val = 0;
   }
   return ret_val;
+}
+
+int check_performance_divergent(){
+    int ret_val;
+    if (hardware_enabled){
+        std::ifstream ifs("hls_report/solution1/*.rpt");
+        
+    }
+    return ret_val;
 }
 
 // change the probability based on update rule
@@ -472,10 +496,10 @@ void fuzzing(char* app, int iteration){
     std::string mutated_input = mutate(i, current_input);
     std::cout << "running with mutated input: " << mutated_input << std::endl ;
     char mutated[256] = "0";
-    //strncpy(mutated, mutated_input.c_str(), mutated_input.length() + 1);
+    strncpy(mutated, mutated_input.c_str(), mutated_input.length() + 1);
     
     if(worthy_simulation(mutated_input)){
-      int crash = run_target(app, mutated_input.c_str());
+      int crash = run_target(app, mutated);
     
       if(crash){ //if found crash
         write_to_test(mutated_input);
@@ -498,7 +522,8 @@ void perform_dry_run(char* app){
   int status = 0;
   memset(trace_bits, 0, MAP_SIZE);
 
-  char* argv[] = {app, "/home/qzhang/Downloads/afl-2.52b/good-seeds/anyseed", NULL};
+  //char* argv[] = {app, "/Desktop/Heterofuzz/prototype/good-seeds/anyseed", NULL};
+  char* argv[] = {app, "/Desktop/Heterofuzz/prototype/matrix-seed/anyseed", NULL};
 
   child_pid = fork();
   if(child_pid < 0){
@@ -587,12 +612,12 @@ static void setup_shm(){
   
   shm_str = alloc_printf("%d", shm_id);
   
-  setenv(SHM_ENV_VAR, shm_str, 1);
+  setenv(SHM_ENV_VAR, (char*)shm_str, 1);
 
   ck_free(shm_str);
 
 
-  trace_bits = shmat(shm_id, NULL, 0);
+  trace_bits = (unsigned char*)shmat(shm_id, NULL, 0);
   if (!trace_bits) PFATAL("shmat() failed");
 }
 
