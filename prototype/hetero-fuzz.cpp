@@ -97,9 +97,20 @@ static int shm_id;                    /* SHM ID */
 static u16 count_class_lookup16[65536];
 static FILE* plot_file; 
 static bool hardware_enabled = 0;     /*enable kernel simulation*/
+static bool devcloud_fpga_enable = 0; /*enable devcloud fpga*/
+static bool devcloud_fpga_hd_enable = 1;
+static bool devcloud_gpu_enable = 0;  /*enable devcloud gpu*/
 static int current_max = 0;
+static double GFLOPS_max = 0;
+static double GFLOPS_min = 65536;
+static double time_max = 0;
+static double DSP_min = 65536;
+static double DSP_max = 0;
+static double fmax_min = 65536;
+static double fmax_max = 0;
 static int input_max = 0;
 static int input_min = 0;
+static float float_max = 655360000000;
 
 static s32 out_fd,
            dev_urandom_fd = -1,
@@ -196,11 +207,44 @@ std::string random_delete(const std::string &str) {
   return ret;
 }
 
-std::string random_append_int(const std::string &str) {
+std::string random_append_number(const std::string &str) {
+  srand(time(NULL));
+  int a = rand();
+  float num = float_max;
+  if (a%2==0){
+    num = -num;
+  }
+  std::string ret(str);
+  ret = ret + "\n" + std::to_string(num);
+  return ret;
+}
+
+std::string random_add_sparsity(const std::string &str){
   srand(time(NULL));
   std::string ret(str);
-  int num = rand();
-  ret = ret + "\n" + std::to_string(num);
+  for (int i = 0; i<ret.length();i++){
+    if ('0'==ret[i]){
+      int num = rand()%10;
+      if (num >= rand()%10){
+        ret[i] = char(num+int('0'));
+      }
+    }
+  }
+
+  return ret;
+}
+
+std::string random_reduce_sparsity(const std::string &str){
+  srand(time(NULL));
+  std::string ret(str);
+  for (int i = 0; i<ret.length();i++){
+    if (ret[i]>'0'){
+      int num = rand()%10;
+      if (num >= rand()%10){
+        ret[i] = '0';
+      }
+    }
+  }
   return ret;
 }
 
@@ -231,13 +275,11 @@ std::string mutate(int fuzzing_iteration, std::string current_input){
   std::ifstream ifs(current_input);
   std::string content( (std::istreambuf_iterator<char>(ifs) ),
                        (std::istreambuf_iterator<char>()    ) );
-  //std::cout << content;
-  //printf("length %d\n", content.length());
 
   srand(time(NULL) + rand());
   //int knob = selection();
-  //std::cout << s << std::endl;
-  int knob = rand()%5+1;
+
+  int knob = rand()%6+1;
   std::cout << knob << std::endl;
   if(knob == 1){
     srand(time(0) + rand());
@@ -251,18 +293,22 @@ std::string mutate(int fuzzing_iteration, std::string current_input){
     printf("%s\nend",content.c_str());
   }
   else if(knob == 2){
-    content = random_append_int(content);
+    content = random_append_number(content);
   }
   else if(knob == 3){
-    content = random_replace(content);
+    content = random_add_sparsity(content);
   }
   else if(knob == 4){
     int pos = rand()%(content.length()-1);
     u8 new_value = '/n';
     content[pos] = new_value;
-  }else{
+  }else if(knob == 5){
     content = random_delete(content);
   }
+  else if(knob == 6){
+    content = random_reduce_sparsity(content);
+  }
+
 
   std::string mutated_input = std::string(out_dir) + std::to_string(fuzzing_iteration);
   //printf("%s\n", mutated_input.c_str());
@@ -270,6 +316,74 @@ std::string mutate(int fuzzing_iteration, std::string current_input){
   out << content;
   out.close();
   return mutated_input;
+}
+
+int devcloud_gpu_exec(char* app, char* argv[]){
+  char* gpu_version = "-gpu.out";
+  char* gpu_app = app;
+  strcat(gpu_app,gpu_version);
+
+  int status = 0;
+  memset(trace_bits, 0, MAP_SIZE);
+
+  child_pid = fork();
+  if(child_pid < 0){
+    perror("fork error.");
+    exit(EXIT_FAILURE);
+  }
+
+  if(!child_pid){ // This is a child process.
+    execv(gpu_app, argv);
+    *(u32*)trace_bits = EXEC_FAIL_SIG;
+    exit(0);
+  }
+
+  pid_t ret;
+  ret = waitpid(child_pid, &status, 0);
+  if(ret < 0){
+    perror("wait error");
+    exit(EXIT_FAILURE);
+  }
+
+  return 0;
+}
+
+int devcloud_fpga_simulation_exec(char* app, char* argv[]){
+  char* execute = "env BITSTREAM=a.aocx CL_CONTEXT_EMULATOR_DEVICE_INTELFPGA=1 INTEL_FPGA_OCL_PLATFORM_NAME=\"$EMULATOR_PLATFORM\" ./";
+  char* fpga_version = "-fpga.out";
+  char* fpga_app = app;
+  strcat(fpga_app,fpga_version);
+  strcat(execute,fpga_app);
+  strcat(execute," ");
+  strcat(execute,argv[1]);
+  int a;
+  a = std::system(execute);
+  if (a<0){
+    perror("Run error: error when run the host with simulation");
+    exit(EXIT_FAILURE);
+  }
+  else {
+    printf("succuess!\n");
+  }
+
+}
+
+int devcloud_fpga_exec(char* app, char* argv[]){
+  int a;
+  char* execute = "env BITSTREAM=a.aocx INTEL_FPGA_OCL_PLATFORM_NAME=\"$HW_PLATFORM\" AOC_OPTION=\"-board=$FPGA_BOARD\" ./";
+  strcat(execute,app);
+  strcat(execute," ");
+  strcat(execute,argv[1]);
+  a = std::system(execute);
+  if (a<0){
+    perror("Run error: error when run the host on fpga");
+    exit(EXIT_FAILURE);
+  }
+  else {
+    printf("succuess!\n");
+  }
+
+  return 0;
 }
 
 int run_target(char* app, char mutated_input[]){
@@ -287,8 +401,29 @@ int run_target(char* app, char mutated_input[]){
     exit(EXIT_FAILURE);
   }
   
-  if(!child_pid){ // This is a child process.
-    execv(app, argv);
+    std::string temp_simulation = "env BITSTREAM=a.aocx CL_CONTEXT_EMULATOR_DEVICE_INTELFPGA=1 INTEL_FPGA_OCL_PLATFORM_NAME=\"$EMULATOR_PLATFORM\" ./" + std::string(app) + std::string(" ") + std::string(argv[1]);
+  std::string temp_fpga = "env BITSTREAM=a.aocx INTEL_FPGA_OCL_PLATFORM_NAME=\"$HW_PLATFORM\" AOC_OPTION=\"-board=$FPGA_BOARD\" ./" + std::string(app) + std::string(" ") + std::string(argv[1]);
+  const char* execute = NULL;
+  if (devcloud_fpga_enable) {
+    execute = temp_simulation.c_str();
+  }
+  if (devcloud_fpga_hd_enable){
+    execute = temp_fpga.c_str();
+  }
+  printf("%s",execute);
+  if(!child_pid){ // This is a child process
+    if (devcloud_fpga_enable) {
+      //devcloud_fpga_simulation_exec(app,argv);
+      
+      int a = std::system(execute);
+    }
+    else if (devcloud_fpga_hd_enable){
+      int a = std::system(execute);
+    }
+    else {
+      execv(app, argv);
+      //int a = std::system(execute);
+    }
     *(u32*)trace_bits = EXEC_FAIL_SIG;
     exit(0);
   }
@@ -325,6 +460,14 @@ int run_target(char* app, char mutated_input[]){
   else if (tb4 == EXEC_FAIL_SIG){
     return FAULT_ERROR;
   }
+
+  //if (devcloud_gpu_enable) {
+  //  devcloud_gpu_exec(app,argv);
+  //:}
+
+  if (devcloud_fpga_enable) {
+    devcloud_fpga_exec(app,argv);
+  }
        
 }
 
@@ -334,6 +477,16 @@ bool larger(std::string current, int max){
   }
   else{
     max = atoi(current.c_str());
+    return true;
+  }
+}
+
+bool smaller(std::string current, int min){
+  if(min < atoi(current.c_str())){
+    return false;
+  }
+  else{
+    min = atoi(current.c_str());
     return true;
   }
 }
@@ -350,7 +503,104 @@ int check_new_hardware(){
   }else{
     ret_val = 0;
   }
+  if (devcloud_gpu_enable)
+  {
+    std::ifstream inFile;
+    inFile.open("exec_info.txt");
+    double gflops=406;
+    if (!inFile.is_open()){
+	    std::cout<<"can't open file\n";
+    }
+    inFile >> gflops;
+    inFile.close();
+    printf("GFLOPS MAX%lf\n",GFLOPS_max);
+    printf("GFLOPS MIN%lf\n",GFLOPS_min);
+    printf("gpu enabled with gflops:%lf\n",gflops);
+    if(gflops>GFLOPS_max){
+      GFLOPS_max = gflops;
+      printf("GFLOPS MAX%lf\n",GFLOPS_max);
+      ret_val = 1;
+    }
+    else if (gflops<GFLOPS_min){
+      GFLOPS_min = gflops;
+      printf("GFLOPS MIN%lf\n",GFLOPS_min);
+      ret_val = 1;
+    }
+    else {
+      ret_val=0;
+    }
+
+  }
+  if (devcloud_fpga_enable){
+    std::ifstream inFile;
+    inFile.open("exec_time.txt");
+    double exec_time=406;
+    if (!inFile.is_open()){
+            std::cout<<"can't open file\n";
+    }
+    inFile >> exec_time;
+    inFile.close();
+    printf("TIME MAX%lf\n",time_max);
+    printf("fpga simulation enabled time:%lf\n",exec_time);
+    if(exec_time>time_max){
+      time_max = exec_time;
+      printf("TIME MAX%lf\n",time);
+      ret_val = 1;
+    }
+    else {
+      ret_val=0;
+    }
+  }
+
+  if (devcloud_fpga_hd_enable){
+    std::ifstream inFile;
+    inFile.open("exec_fpga_info.txt");
+    if (!inFile.is_open()){
+            std::cout<<"can't open file\n";
+    }
+    double exec_time = 0;
+    //double DSPs = 0;
+    //double FMax = 0;
+    inFile >> exec_time; //>> DSPs >> FMax;
+    inFile.close();
+    printf("fpga execution time:%lf\n",exec_time);
+    if(exec_time>time_max){
+      time_max = exec_time;
+      printf("TIME MAX%lf\n",time);
+      ret_val = 1;
+    }
+/*
+    if (DSPs>DSP_max){
+      DSP_max = DSPs;
+      printf("DSPs MAX%lf\n",DSP_max);
+      ret_val = 1;
+    }
+    if (DSPs<DSP_min){
+      DSP_min = DSPs;
+      printf("DSPs MIN%lf\n",DSP_min);
+      ret_val = 1;
+    }
+
+    if (FMax>fmax_max){
+      fmax_max = FMax;
+      printf("FMax MAX%lf\n",FMax);
+      ret_val = 1;
+    }
+    if (FMax<fmax_min){
+      fmax_min = FMax;
+      printf("FMax MIN%lf\n",FMax);
+      ret_val = 1;
+    }*/
+  }
   return ret_val;
+}
+
+int check_execution_divergent(){
+  int ret_val;
+  if (devcloud_fpga_enable){
+    std::ifstream ifs("exec_time.tx");
+    
+  }
 }
 
 int check_performance_divergent(){
@@ -364,8 +614,9 @@ int check_performance_divergent(){
 
 // change the probability based on update rule
 void update_probability(){
-      std::vector<int> prob_int;
-    int sum = 0;
+     // std::vector<int> prob_int;
+    printf("probability updated\n");
+	int sum = 0;
     for(int i=0;i<prob.size();i++) {
         if(mut[i]){
           prob[i] = prob[i] + 0.05;
@@ -375,8 +626,9 @@ void update_probability(){
           prob[i] = prob[i] - 0.05/(mut.size()-1);
         }
         
-        prob_int.push_back(sum);
+       // prob_int.push_back(sum);
     }
+    printf("probability updated\n");
 }
 
 /*save the input if a new edge is covered or maximize a hardware divergence character
@@ -398,13 +650,14 @@ int save_if_interest(){
 
   new_hardware = check_new_hardware();
   
+  printf("hardware check completed\n");
   if(new_coverage && new_hardware){
-    update_probability();
+    //update_probability();
     return NEW_BOTH;
   }else if(new_coverage && !new_hardware){
     return NEW_COVERAGE;
   }else if(!new_coverage && new_hardware){
-    update_probability();
+    //update_probability();
     return NEW_HARDWARE;
   }
 
@@ -500,7 +753,7 @@ void fuzzing(char* app, int iteration){
     
     if(worthy_simulation(mutated_input)){
       int crash = run_target(app, mutated);
-    
+      printf("if crash:%d\n",crash); 
       if(crash){ //if found crash
         write_to_test(mutated_input);
       }else{  // else check the guidance
@@ -682,3 +935,4 @@ int main(int argc, char** argv) {
   exit(0);
 
 }
+
