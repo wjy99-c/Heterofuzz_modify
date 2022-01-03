@@ -50,7 +50,6 @@ static char out_dir[256];
 static int max_trials;
 static long long start_time;
 static long long end_time;
-
 struct queue_entry {
   char fname[256];                      /* File name for the test case      */
   u32 len;                            /* Input length                     */
@@ -90,24 +89,25 @@ std::vector<double> prob = {0.167, 0.167, 0.167, 0.167, 0.167, 0.167};  /*Probab
 static u8* trace_bits;                /* SHM with instrumentation bitmap  */
 static u8  total_bits[MAP_SIZE];     /* Up to now coverage */
 static std::vector<characteristic*> divergence;  /* SHM with divergence*/
-static std::vector<int> mut; 
+static std::vector<bool> mut = {false,false,false,false,false,false}; 
 
 static int child_pid = -1;            /* PID of the fuzzed program        */
 static int shm_id;                    /* SHM ID */
 static u16 count_class_lookup16[65536];
 static FILE* plot_file; 
 static bool hardware_enabled = 0;     /*enable kernel simulation*/
-static bool devcloud_fpga_enable = 0; /*enable devcloud fpga*/
-static bool devcloud_fpga_hd_enable = 1;
+static bool devcloud_fpga_enable = 0; /*enable devcloud fpga simulation*/
+static bool devcloud_fpga_hd_enable = 0;
 static bool devcloud_gpu_enable = 0;  /*enable devcloud gpu*/
 static int current_max = 0;
 static double GFLOPS_max = 0;
 static double GFLOPS_min = 65536;
-static double time_max = 0;
 static double DSP_min = 65536;
 static double DSP_max = 0;
 static double fmax_min = 65536;
 static double fmax_max = 0;
+static double time_max = 0;
+static int exec_time_max = 0;
 static int input_max = 0;
 static int input_min = 0;
 static float float_max = 655360000000;
@@ -154,6 +154,28 @@ static void usage(char* argv0) {
 
   exit(1);
 
+}
+
+static void list_dir(const char *path)
+{
+    struct dirent *entry;
+
+    DIR *dir = opendir(path);
+    if (dir == NULL) {
+        return;
+    }
+
+    while ((entry = readdir(dir)) != NULL) {
+        if(entry->d_name[0]=='.')
+            continue;
+        struct queue_entry *q = (struct queue_entry *)malloc(sizeof(queue_entry));
+        //q->fname = entry->d_name;
+        std::string file_name = std::string(path) + std::string(entry->d_name);
+        memcpy(q->fname, file_name.c_str(), strlen(file_name.c_str()));
+        input_queue.push_back(q);
+    }
+
+    closedir(dir);
 }
 
 /* Make a copy of the current command line. */
@@ -277,7 +299,6 @@ std::string mutate(int fuzzing_iteration, std::string current_input){
                        (std::istreambuf_iterator<char>()    ) );
 
   srand(time(NULL) + rand());
-  //int knob = selection();
 
   int knob = rand()%6+1;
   std::cout << knob << std::endl;
@@ -318,55 +339,6 @@ std::string mutate(int fuzzing_iteration, std::string current_input){
   return mutated_input;
 }
 
-int devcloud_gpu_exec(char* app, char* argv[]){
-  char* gpu_version = "-gpu.out";
-  char* gpu_app = app;
-  strcat(gpu_app,gpu_version);
-
-  int status = 0;
-  memset(trace_bits, 0, MAP_SIZE);
-
-  child_pid = fork();
-  if(child_pid < 0){
-    perror("fork error.");
-    exit(EXIT_FAILURE);
-  }
-
-  if(!child_pid){ // This is a child process.
-    execv(gpu_app, argv);
-    *(u32*)trace_bits = EXEC_FAIL_SIG;
-    exit(0);
-  }
-
-  pid_t ret;
-  ret = waitpid(child_pid, &status, 0);
-  if(ret < 0){
-    perror("wait error");
-    exit(EXIT_FAILURE);
-  }
-
-  return 0;
-}
-
-int devcloud_fpga_simulation_exec(char* app, char* argv[]){
-  char* execute = "env BITSTREAM=a.aocx CL_CONTEXT_EMULATOR_DEVICE_INTELFPGA=1 INTEL_FPGA_OCL_PLATFORM_NAME=\"$EMULATOR_PLATFORM\" ./";
-  char* fpga_version = "-fpga.out";
-  char* fpga_app = app;
-  strcat(fpga_app,fpga_version);
-  strcat(execute,fpga_app);
-  strcat(execute," ");
-  strcat(execute,argv[1]);
-  int a;
-  a = std::system(execute);
-  if (a<0){
-    perror("Run error: error when run the host with simulation");
-    exit(EXIT_FAILURE);
-  }
-  else {
-    printf("succuess!\n");
-  }
-
-}
 
 int devcloud_fpga_exec(char* app, char* argv[]){
   int a;
@@ -400,8 +372,8 @@ int run_target(char* app, char mutated_input[]){
     perror("fork error.");
     exit(EXIT_FAILURE);
   }
-  
-    std::string temp_simulation = "env BITSTREAM=a.aocx CL_CONTEXT_EMULATOR_DEVICE_INTELFPGA=1 INTEL_FPGA_OCL_PLATFORM_NAME=\"$EMULATOR_PLATFORM\" ./" + std::string(app) + std::string(" ") + std::string(argv[1]);
+
+  std::string temp_simulation = "env BITSTREAM=a.aocx CL_CONTEXT_EMULATOR_DEVICE_INTELFPGA=1 INTEL_FPGA_OCL_PLATFORM_NAME=\"$EMULATOR_PLATFORM\" ./" + std::string(app) + std::string(" ") + std::string(argv[1]);
   std::string temp_fpga = "env BITSTREAM=a.aocx INTEL_FPGA_OCL_PLATFORM_NAME=\"$HW_PLATFORM\" AOC_OPTION=\"-board=$FPGA_BOARD\" ./" + std::string(app) + std::string(" ") + std::string(argv[1]);
   const char* execute = NULL;
   if (devcloud_fpga_enable) {
@@ -463,7 +435,7 @@ int run_target(char* app, char mutated_input[]){
 
   //if (devcloud_gpu_enable) {
   //  devcloud_gpu_exec(app,argv);
-  //:}
+  //}
 
   if (devcloud_fpga_enable) {
     devcloud_fpga_exec(app,argv);
@@ -509,13 +481,13 @@ int check_new_hardware(){
     inFile.open("exec_info.txt");
     double gflops=406;
     if (!inFile.is_open()){
-	    std::cout<<"can't open file\n";
+            std::cout<<"can't open file\n";
     }
     inFile >> gflops;
     inFile.close();
     printf("GFLOPS MAX%lf\n",GFLOPS_max);
     printf("GFLOPS MIN%lf\n",GFLOPS_min);
-    printf("gpu enabled with gflops:%lf\n",gflops);
+    printf("gpu enabled with gflops:%lf\n",&gflops);
     if(gflops>GFLOPS_max){
       GFLOPS_max = gflops;
       printf("GFLOPS MAX%lf\n",GFLOPS_max);
@@ -559,9 +531,9 @@ int check_new_hardware(){
             std::cout<<"can't open file\n";
     }
     double exec_time = 0;
-    //double DSPs = 0;
-    //double FMax = 0;
-    inFile >> exec_time; //>> DSPs >> FMax;
+    double DSPs = 0;
+    double FMax = 0;
+    inFile >> exec_time >> DSPs >> FMax;
     inFile.close();
     printf("fpga execution time:%lf\n",exec_time);
     if(exec_time>time_max){
@@ -569,7 +541,7 @@ int check_new_hardware(){
       printf("TIME MAX%lf\n",time);
       ret_val = 1;
     }
-/*
+
     if (DSPs>DSP_max){
       DSP_max = DSPs;
       printf("DSPs MAX%lf\n",DSP_max);
@@ -590,7 +562,7 @@ int check_new_hardware(){
       fmax_min = FMax;
       printf("FMax MIN%lf\n",FMax);
       ret_val = 1;
-    }*/
+    }
   }
   return ret_val;
 }
@@ -614,9 +586,8 @@ int check_performance_divergent(){
 
 // change the probability based on update rule
 void update_probability(){
-     // std::vector<int> prob_int;
-    printf("probability updated\n");
-	int sum = 0;
+      std::vector<int> prob_int;
+    int sum = 0;
     for(int i=0;i<prob.size();i++) {
         if(mut[i]){
           prob[i] = prob[i] + 0.05;
@@ -626,9 +597,8 @@ void update_probability(){
           prob[i] = prob[i] - 0.05/(mut.size()-1);
         }
         
-       // prob_int.push_back(sum);
+        prob_int.push_back(sum);
     }
-    printf("probability updated\n");
 }
 
 /*save the input if a new edge is covered or maximize a hardware divergence character
@@ -650,14 +620,13 @@ int save_if_interest(){
 
   new_hardware = check_new_hardware();
   
-  printf("hardware check completed\n");
   if(new_coverage && new_hardware){
-    //update_probability();
+    update_probability();
     return NEW_BOTH;
   }else if(new_coverage && !new_hardware){
     return NEW_COVERAGE;
   }else if(!new_coverage && new_hardware){
-    //update_probability();
+    update_probability();
     return NEW_HARDWARE;
   }
 
@@ -685,6 +654,7 @@ void write_to_test(std::string current_input, int interest){
     memcpy(q->fname, new_name.c_str(), 256);
     input_queue.push_back(q);
   }
+  
 }
 
 void write_to_test(std::string current_input){
@@ -728,23 +698,19 @@ void fuzzing(char* app, int iteration){
 
   for(int i = 1; i < iteration; i ++){
     printf("\n**********%d**********\n", i);
-    //printf("input queue length: %d\n", input_queue.size());
+
+    srand(time(0) + rand());
+    if (input_queue.size()==0){
+      list_dir(in_dir); //TODO: change to input dir of target app 
+    }
+    int index = rand()%input_queue.size();
+        //printf("input queue length: %d\n", input_queue.size());
     // for(int i = 0; i < input_queue.size(); i++){
     //   printf("%s ", input_queue[i]->fname);
     // }
-    srand(time(0) + rand());
-    int index = rand()%input_queue.size();
   
     struct queue_entry* q = input_queue[index];
-  //  static u8 first_trace[MAP_SIZE];
-
     std::string current_input = std::string(q->fname);
-  //  std::cout << "selected input: " << current_input << std::endl;
-
-  //  if (q->exec_cksum) memcpy(first_trace, trace_bits, MAP_SIZE);
-
-    //u32 ck1 = hash32(trace_bits, MAP_SIZE, HASH_CONST);
-    //SAYF("\nFirst trace: %u\n", ck1);
 
     std::string mutated_input = mutate(i, current_input);
     std::cout << "running with mutated input: " << mutated_input << std::endl ;
@@ -753,7 +719,7 @@ void fuzzing(char* app, int iteration){
     
     if(worthy_simulation(mutated_input)){
       int crash = run_target(app, mutated);
-      printf("if crash:%d\n",crash); 
+    
       if(crash){ //if found crash
         write_to_test(mutated_input);
       }else{  // else check the guidance
@@ -762,6 +728,10 @@ void fuzzing(char* app, int iteration){
         write_to_test(mutated_input, interest);
         }
       }
+    
+    while (!input_queue.empty()){
+      input_queue.pop_back();
+    }
   }
 }
 
@@ -830,28 +800,6 @@ void perform_dry_run(char* app){
 
 }
 
-static void list_dir(const char *path)
-{
-    struct dirent *entry;
-
-    DIR *dir = opendir(path);
-    if (dir == NULL) {
-        return;
-    }
-
-    while ((entry = readdir(dir)) != NULL) {
-        if(entry->d_name[0]=='.')
-            continue;
-        struct queue_entry *q = (struct queue_entry *)malloc(sizeof(queue_entry));
-        //q->fname = entry->d_name;
-        std::string file_name = std::string(path) + std::string(entry->d_name);
-        memcpy(q->fname, file_name.c_str(), strlen(file_name.c_str()));
-        input_queue.push_back(q);
-    }
-
-    closedir(dir);
-}
-
 static void setup_shm(){
 
   ACTF("Setting up the shared memory for code coverage...");
@@ -861,7 +809,7 @@ static void setup_shm(){
 
   shm_id = shmget(IPC_PRIVATE, MAP_SIZE, IPC_CREAT | IPC_EXCL | 0600);
   
-  if (shm_id < 0) PFATAL("Fialed to creat a shared memory");
+  if (shm_id < 0) PFATAL("Failed to creat a shared memory");
   
   shm_str = alloc_printf("%d", shm_id);
   
@@ -935,4 +883,3 @@ int main(int argc, char** argv) {
   exit(0);
 
 }
-
