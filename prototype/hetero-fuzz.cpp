@@ -701,14 +701,14 @@ void fuzzing(char* app, int iteration){
 
     srand(time(0) + rand());
     if (input_queue.size()==0){
-      list_dir(in_dir); //TODO: change to input dir of target app 
+      list_dir(out_dir); //TODO: change to input dir of target app 
     }
     int index = rand()%input_queue.size();
-        //printf("input queue length: %d\n", input_queue.size());
-    // for(int i = 0; i < input_queue.size(); i++){
-    //   printf("%s ", input_queue[i]->fname);
-    // }
-  
+        printf("input queue length: %d\n", input_queue.size());
+     for(int i = 0; i < input_queue.size(); i++){
+       printf("%s\n ", input_queue[i]->fname);
+     }
+
     struct queue_entry* q = input_queue[index];
     std::string current_input = std::string(q->fname);
 
@@ -716,10 +716,10 @@ void fuzzing(char* app, int iteration){
     std::cout << "running with mutated input: " << mutated_input << std::endl ;
     char mutated[256] = "0";
     strncpy(mutated, mutated_input.c_str(), mutated_input.length() + 1);
-    
+
     if(worthy_simulation(mutated_input)){
       int crash = run_target(app, mutated);
-    
+
       if(crash){ //if found crash
         write_to_test(mutated_input);
       }else{  // else check the guidance
@@ -728,12 +728,13 @@ void fuzzing(char* app, int iteration){
         write_to_test(mutated_input, interest);
         }
       }
-    
-    while (!input_queue.empty()){
+
+    while (input_queue.size()>1){
       input_queue.pop_back();
     }
   }
 }
+
 
 
 /* Perform dry run of all test cases to confirm that the app is working as
