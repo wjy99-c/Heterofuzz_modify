@@ -4,7 +4,9 @@
 
 #include<array>
 #include<CL/sycl.hpp>
+#include <sycl/ext/intel/fpga_extensions.hpp>
 using namespace sycl;
+struct DeviceToHostSideChannelID;
 
 int main() {
   constexpr int workers = 64;
@@ -15,6 +17,8 @@ int main() {
   for (int i = 0; i < size; i++) {
     fpData[i] = 8.0f;
   }
+
+  using MyDeviceToHostSideChannel = DeviceToHostSideChannel<DeviceToHostSideChannelID, int, use_usm_host_alloc, 8>;
 
   buffer fpBuf(fpData);
 
