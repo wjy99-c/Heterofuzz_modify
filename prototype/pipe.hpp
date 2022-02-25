@@ -42,16 +42,9 @@ event SubmitSideChannelKernels(queue& q, int initial_match_num,
   // is if you are expecting asynchronous updates from the host through a
   // side channel.
   constexpr size_t kTimeoutCounterMax = 1024;
-  int size = 100;
-  std::array<float, size> fpData;
-  for (int i = 0; i < size; i++) {
-    fpData[i] = 8.0f;
-  }
-  buffer fpBuf(fpData);
 
   // submit the main processing kernel
   return q.single_task<SideChannelMainKernel>([=] {
-    accessor buf{fpBuf}
     int match_num = initial_match_num;
     size_t timeout_counter;
     size_t samples_processed = 0;
