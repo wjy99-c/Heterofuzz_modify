@@ -123,28 +123,29 @@ void mutate(IntVector &a, IntVector &b, int max_i){
         a[pos_i] = 0;
     }
     else if (knob==3){
-        for (size_t k = 0; k < max_k; k++){
+        int max_k = rand()% (max_i - pos_i)
+        for (size_t k = pos_i; k < pos_i+max_k; k++){
             float value = (double)(rand()) / ((double)(RAND_MAX/MAX));
-            a(k,pos_i) = value;
+            a[k] = value;
         }
     }
     else if (knob==4){
-        for (int i = 0; i < THREADS; i++)
-		    threads[i] = std::thread(parallel_sparsity, std::ref(a), max_k, max_i, i);
-	    for (int i = 0; i < THREADS; i++)
-		    threads[i].join();
+        //for (int i = 0; i < THREADS; i++)
+		//    threads[i] = std::thread(parallel_sparsity, std::ref(a), max_k, max_i, i);
+	    //for (int i = 0; i < THREADS; i++)
+		//    threads[i].join();
     }
     else if (knob==5){
-        for (int i = 0; i < THREADS; i++)
-		    threads[i] = std::thread(parallel_add, std::ref(a), max_k, max_i, i);
-	    for (int i = 0; i < THREADS; i++)
-		    threads[i].join();
+        //for (int i = 0; i < THREADS; i++)
+		//    threads[i] = std::thread(parallel_add, std::ref(a), max_k, max_i, i);
+	    //for (int i = 0; i < THREADS; i++)
+		//    threads[i].join();
     }
     else if (knob==6){
-        for (int i = 0; i < THREADS; i++)
-		    threads[i] = std::thread(parallel_minus,std::ref(a), max_k, max_i, i);
-	    for (int i = 0; i < THREADS; i++)
-		    threads[i].join();
+        //for (int i = 0; i < THREADS; i++)
+		//    threads[i] = std::thread(parallel_minus,std::ref(a), max_k, max_i, i);
+	    //for (int i = 0; i < THREADS; i++)
+		//    threads[i].join();
     }
 }
 //************************************
