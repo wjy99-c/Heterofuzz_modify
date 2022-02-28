@@ -99,6 +99,22 @@ void VectorAdd(queue &q, const IntVector &a_vector, const IntVector &b_vector,
   
 }
 
+int write_file(const char *address, const IntVector &a, const IntVector &b){
+    FILE* f = fopen(address,"w");
+    
+    int aa=0;
+    for (int i = 0; i < a.size(); i++) {
+      aa  = a[i];
+      fprintf(f,"%d", aa);
+    }
+    for (int i = 0; i < b.size(); k++) {
+      aa = b[i];
+      fprintf(f,"%d", aa);
+    }
+    return 0;
+}
+
+
 //************************************
 // Initialize the vector from 0 to vector_size - 1
 //************************************
@@ -130,18 +146,27 @@ void mutate(IntVector &a, IntVector &b, int max_i){
         }
     }
     else if (knob==4){
+        for (int i = 0; i <pos_i; i++){
+            a[i] = 0;
+        }
         //for (int i = 0; i < THREADS; i++)
 		//    threads[i] = std::thread(parallel_sparsity, std::ref(a), max_k, max_i, i);
 	    //for (int i = 0; i < THREADS; i++)
 		//    threads[i].join();
     }
     else if (knob==5){
+        for (int i = 0; i < pos_i; i++){
+            a[i] = a[i] + 100;
+        }
         //for (int i = 0; i < THREADS; i++)
 		//    threads[i] = std::thread(parallel_add, std::ref(a), max_k, max_i, i);
 	    //for (int i = 0; i < THREADS; i++)
 		//    threads[i].join();
     }
     else if (knob==6){
+        for (int i = 0; i < pos_i; i++){
+            a[i] = a[i] - 100;
+        }
         //for (int i = 0; i < THREADS; i++)
 		//    threads[i] = std::thread(parallel_minus,std::ref(a), max_k, max_i, i);
 	    //for (int i = 0; i < THREADS; i++)
@@ -178,16 +203,30 @@ int main(int argc, char* argv[]) {
   InitializeVector(a);
   InitializeVector(b);
 
+  int file_number = 0;
+  int current_file = 0;
+
+
   try {
     queue q(d_selector, exception_handler);
 
+    for (int i = 0; i<6; i++){
     // Print out the device information used for the kernel code.
     std::cout << "Running on device: "
               << q.get_device().get_info<info::device::name>() << "\n";
     std::cout << "Vector size: " << a.size() << "\n";
 
     // Vector addition in DPC++
-    VectorAdd(q, a, b, sum_parallel, flag);
+
+    int interest = VectorAdd(q, a, b, sum_parallel, flag);
+    mutate(a, vector_size);
+    mutate(b, vector_size);
+    if (interest==1) {
+        std::string path_to_output(argv[1]);
+        write_file((path_to_output+"-"+to_string(file_number)).c_str(),a,b);
+    }
+    
+    }
   } catch (exception const &e) {
     std::cout << "An exception is caught for vector add.\n";
     std::terminate();
