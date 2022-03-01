@@ -21,10 +21,15 @@
 // dpc_common.hpp can be found in the dev-utilities include folder.
 // e.g., $ONEAPI_ROOT/dev-utilities/<version>/include/dpc_common.hpp
 #include "dpc_common.hpp"
+#include "FakeIOPipes.hpp"
+#include "HostSideChannel.hpp"
+
 
 using namespace std;
 using namespace sycl;
 
+struct DeviceToHostSideChannelID;
+using MyDeviceToHostSideChannel = DeviceToHostSideChannel<DeviceToHostSideChannelID, int, true, 8>;
 /**
  * Each element of the product matrix c[i][j] is computed from a unique row and
  * column of the factor matrices, a[i][k] and b[k][j]
@@ -41,7 +46,22 @@ constexpr int P = m_size / 2;
  */
 int VerifyResult(float (*c_back)[P]);
 
-void parallel_sparsity(buffer<float, 2> &a, int max_k, int max_i, int thread_id)
+int write_file(const char *address, const IntVector &a, const IntVector &b){
+    FILE* f = fopen(address,"w");
+    
+    int aa=0;
+    for (int i = 0; i < a.size(); i++) {
+      aa  = a[i];
+      fprintf(f,"%d", aa);
+    }
+    for (int i = 0; i < b.size(); k++) {
+      aa = b[i];
+      fprintf(f,"%d", aa);
+    }
+    return 0;
+}
+
+void parallel_sparsity(float(*a)[], int max_k, int max_i, int thread_id)
 {
     int s = max_k / THREADS * thread_id, 
         e = max_k / THREADS * (thread_id + 1);
@@ -50,11 +70,11 @@ void parallel_sparsity(buffer<float, 2> &a, int max_k, int max_i, int thread_id)
         for (int j = 0; j < max_i; j++)
             {
                 float value = (double)(rand()) / ((double)(RAND_MAX/MAX));
-                a(i,j) = (a(i,j) == 0) ? value : a(i,j);
+                a[i,j] = (a[i,j] == 0) ? value : a[i,j];
             }
 }
 
-void parallel_add(buffer<float, 2> &a, int max_k, int max_i, int thread_id)
+void parallel_add(float(*a)[], int max_k, int max_i, int thread_id)
 {
     int s = max_k / THREADS * thread_id, 
         e = max_k / THREADS * (thread_id + 1);
@@ -62,11 +82,11 @@ void parallel_add(buffer<float, 2> &a, int max_k, int max_i, int thread_id)
     for (int i = s; i < e; i++)
         for (int j = 0; j < max_i; j++)
             {
-                a(i,j) = a(i,j) + 1;
+                a[i,j] = a[i,j] + 1;
             }
 }
 
-void parallel_minus(buffer<float, 2> &a, int max_k, int max_i, int thread_id)
+void parallel_minus(float(*a)[], int max_k, int max_i, int thread_id)
 {
     int s = max_k / THREADS * thread_id, 
         e = max_k / THREADS * (thread_id + 1);
@@ -74,11 +94,11 @@ void parallel_minus(buffer<float, 2> &a, int max_k, int max_i, int thread_id)
     for (int i = s; i < e; i++)
         for (int j = 0; j < max_i; j++)
             {
-                a(i,j) = a(i,j) - 1;
+                a[i,j] = a[i,j] - 1;
             }
 }
 
-void mutate(buffer<float, 2> &a, int max_k, int max_i){
+void mutate(float(*a)[], int max_k, int max_i){
     srand(time(NULL) + rand());
     int knob = rand()%4+1;
     std::thread *threads = new std::thread[THREADS];
@@ -88,15 +108,15 @@ void mutate(buffer<float, 2> &a, int max_k, int max_i){
     
     if (knob==1){
         float value = (double)(rand()) / ((double)(RAND_MAX/MAX));
-        a(pos_k,pos_i) = value;
+        a[pos_k,pos_i] = value;
     }
     else if (knob==2){
-        a(pos_k,pos_i) = 0;
+        a[pos_k,pos_i] = 0;
     }
     else if (knob==3){
         for (size_t k = 0; k < max_k; k++){
             float value = (double)(rand()) / ((double)(RAND_MAX/MAX));
-            a(k,pos_i) = value;
+            a[k,pos_i] = value;
         }
     }
     else if (knob==4){
@@ -123,99 +143,100 @@ void mutate(buffer<float, 2> &a, int max_k, int max_i){
 int main() {
   // Host memory buffer that device will write data back before destruction.
   float(*c_back)[P] = new float[M][P];
+  float(*a_back)[N] = new float[M][N];
+  float(*b_back)[P] = new float[N][P];
 
   // Intialize c_back
   for (int i = 0; i < M; i++)
     for (int j = 0; j < P; j++) c_back[i][j] = 0.0f;
+  for (int i = 0; i < M; i++)
+    for (int j = 0; j < N; j++) a_back[i][j] = 1.0f;
+  for (int i = 0; i < N; i++)
+    for (int j = 0; j < P; j++) b_back[i][j] = i + 1.0f;
 
   // Initialize the device queue with the default selector. The device queue is
   // used to enqueue kernels. It encapsulates all states needed for execution.
-  try {
-    queue q(default_selector{}, dpc_common::exception_handler);
+  for (int i=0; i<6; i++){
+      
+    int interest = 0;
 
-    cout << "Device: " << q.get_device().get_info<info::device::name>() << "\n";
+    try {
+        queue q(default_selector{}, dpc_common::exception_handler);
 
-    // Create 2D buffers for matrices, buffer c is bound with host memory c_back
+        cout << "Device: " << q.get_device().get_info<info::device::name>() << "\n";
 
-    buffer<float, 2> a_buf(range(M, N));
-    buffer<float, 2> b_buf(range(N, P));
-    buffer c_buf(reinterpret_cast<float *>(c_back), range(M, P));
+        // Create 2D buffers for matrices, buffer c is bound with host memory c_back
 
-    cout << "Problem size: c(" << M << "," << P << ") = a(" << M << "," << N
-         << ") * b(" << N << "," << P << ")\n";
+        buffer a_buf(reinterpret_cast<float *>(a_back), range(M, N));
+        buffer b_buf(reinterpret_cast<float *>(b_back), range(N, P));
+        buffer c_buf(reinterpret_cast<float *>(c_back), range(M, P));
 
-    // Using three command groups to illustrate execution order. The use of
-    // first two command groups for initializing matrices is not the most
-    // efficient way. It just demonstrates the implicit multiple command group
-    // execution ordering.
+        cout << "Problem size: c(" << M << "," << P << ") = a(" << M << "," << N
+            << ") * b(" << N << "," << P << ")\n";
 
-    // Submit command group to queue to initialize matrix a
-    q.submit([&](auto &h) {
-      // Get write only access to the buffer on a device.
-      accessor a(a_buf, h, write_only);
-
-      // Execute kernel.
-      h.parallel_for(range(M, N), [=](auto index) {
-        // Each element of matrix a is 1.
-        a[index] = 1.0f;
-      });
-    });
-
-    // Submit command group to queue to initialize matrix b
-    q.submit([&](auto &h) {
-      // Get write only access to the buffer on a device
-      accessor b(b_buf, h, write_only);
-
-      // Execute kernel.
-      h.parallel_for(range(N, P), [=](auto index) {
-        // Each column of b is the sequence 1,2,...,N
-        b[index] = index[0] + 1.0f;
-      });
-    });
+        // Using three command groups to illustrate execution order. The use of
+        // first two command groups for initializing matrices is not the most
+        // efficient way. It just demonstrates the implicit multiple command group
+        // execution ordering.
 
     // Submit command group to queue to multiply matrices: c = a * b
-
-    for (int i=0; i<6; i++){
+        MyDeviceToHostSideChannel::Init(q);
 
       
-      q.submit([&](auto &h) {
-      // Read from a and b, write to c
-        accessor a(a_buf, h, read_only);
-        accessor b(b_buf, h, read_only);
-        accessor c(c_buf, h, write_only);
+        q.submit([&](auto &h) {
+        // Read from a and b, write to c
+            accessor a(a_buf, h, read_only);
+            accessor b(b_buf, h, read_only);
+            accessor c(c_buf, h, write_only);
 
-        int width_a = a_buf.get_range()[1];
+            int width_a = a_buf.get_range()[1];
 
-        // Execute kernel.
-        h.parallel_for(range(M, P), [=](auto index) {
-          // Get global position in Y direction.
-          int row = index[0];
-          // Get global position in X direction.
-          int col = index[1];
+            // Execute kernel.
+            h.parallel_for(range(M, P), [=](auto index) {
+            // Get global position in Y direction.
+            int row = index[0];
+            // Get global position in X direction.
+            int col = index[1];
 
-          float sum = 0.0f;
+            float sum = 0.0f;
 
-          // Compute the result of one element of c
-          for (int i = 0; i < width_a; i++) {
-            sum += a[row][i] * b[i][col];
-          }
+            // Compute the result of one element of c
+            for (int i = 0; i < width_a; i++) {
+                sum += a[row][i] * b[i][col];
+            }
+            bool write_flag;
 
-          c[index] = sum;
+            c[index] = sum;
+            if (c[index]<0){MyDeviceToHostSideChannel::write(1, write_flag);}
+            });
         });
-      });
-
-    }
+        bool read_flag;
+        int flag;
+        for (int i = 0; i < 3; i++) {
+            // Blocking read an int from the pipe
+            flag = MyDeviceToHostSideChannel::read(read_flag);
+            if (!read_flag){ break;}
+            else {interested = 1;}
+        }
+        MyDeviceToHostSideChannel::Destroy(q);
     
-  } catch (sycl::exception const &e) {
-    cout << "An exception is caught while multiplying matrices.\n";
-    terminate();
+    } catch (sycl::exception const &e) {
+        cout << "An exception is caught while multiplying matrices.\n";
+        terminate();
+    }
+
+    int result;
+    cout << "Result of matrix multiplication using DPC++: ";
+    result = VerifyResult(c_back); //verify check. No need if we add host check
+    if (result!=0) {interest = 1;}
+    mutate(a_back, M, N);
+    mutate(b_back, N, P);
+    if (interest==1) {
+        std::string path_to_output(argv[1]);
+        write_file((path_to_output+"-"+to_string(file_number)).c_str(),a,b);
+    }
   }
-
-  int result;
-  cout << "Result of matrix multiplication using DPC++: ";
-  result = VerifyResult(c_back);
-  delete[] c_back;
-
+  
   return result;
 }
 
