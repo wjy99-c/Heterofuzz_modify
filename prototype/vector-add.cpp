@@ -58,7 +58,7 @@ static auto exception_handler = [](sycl::exception_list e_list) {
 //************************************
 // Vector add in DPC++ on device: returns sum in 4th parameter "sum_parallel".
 //************************************
-void VectorAdd(queue &q, const IntVector &a_vector, const IntVector &b_vector,
+int VectorAdd(queue &q, const IntVector &a_vector, const IntVector &b_vector,
                IntVector &sum_parallel, IntVector &flag) {
   // Create the range object for the vectors managed by the buffer.
   range<1> num_items{a_vector.size()};
@@ -89,13 +89,18 @@ void VectorAdd(queue &q, const IntVector &a_vector, const IntVector &b_vector,
     // DPC++ supports unnamed lambda kernel by default.
     h.parallel_for(num_items, [=](auto i) { sum[i] = a[i] + b[i]; 
                                             if (sum[i]<0){MyDeviceToHostSideChannel::write(i);}
-                                        
                                           });
   });
+  bool read_flag;
+  int interested = 0;
   for (int i = 0; i < 3; i++) {
         // Blocking read an int from the pipe
-        flag[i] = MyDeviceToHostSideChannel::read();
+        flag[i] = MyDeviceToHostSideChannel::read(read_flag);
+        if (!read_flag){ break;}
+        else {interested = 1;}
       }
+
+  return interested;    
   
 }
 
