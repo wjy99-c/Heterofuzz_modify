@@ -99,7 +99,7 @@ int VectorAdd(queue &q, const IntVector &a_vector, const IntVector &b_vector,
         if (!read_flag){ break;}
         else {interested = 1;}
       }
-
+  MyDeviceToHostSideChannel::Destroy(q);
   return interested;    
   
 }
