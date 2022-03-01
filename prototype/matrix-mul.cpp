@@ -41,7 +41,7 @@ constexpr int P = m_size / 2;
  */
 int VerifyResult(float (*c_back)[P]);
 
-void parallel_sparsity(Halide::Runtime::Buffer<float> &a, int max_k, int max_i, int thread_id)
+void parallel_sparsity(buffer<float, 2> &a, int max_k, int max_i, int thread_id)
 {
     int s = max_k / THREADS * thread_id, 
         e = max_k / THREADS * (thread_id + 1);
@@ -175,32 +175,37 @@ int main() {
 
     // Submit command group to queue to multiply matrices: c = a * b
 
-    
-    q.submit([&](auto &h) {
+    for (int i=0; i<6; i++){
+
+      
+      q.submit([&](auto &h) {
       // Read from a and b, write to c
-      accessor a(a_buf, h, read_only);
-      accessor b(b_buf, h, read_only);
-      accessor c(c_buf, h, write_only);
+        accessor a(a_buf, h, read_only);
+        accessor b(b_buf, h, read_only);
+        accessor c(c_buf, h, write_only);
 
-      int width_a = a_buf.get_range()[1];
+        int width_a = a_buf.get_range()[1];
 
-      // Execute kernel.
-      h.parallel_for(range(M, P), [=](auto index) {
-        // Get global position in Y direction.
-        int row = index[0];
-        // Get global position in X direction.
-        int col = index[1];
+        // Execute kernel.
+        h.parallel_for(range(M, P), [=](auto index) {
+          // Get global position in Y direction.
+          int row = index[0];
+          // Get global position in X direction.
+          int col = index[1];
 
-        float sum = 0.0f;
+          float sum = 0.0f;
 
-        // Compute the result of one element of c
-        for (int i = 0; i < width_a; i++) {
-          sum += a[row][i] * b[i][col];
-        }
+          // Compute the result of one element of c
+          for (int i = 0; i < width_a; i++) {
+            sum += a[row][i] * b[i][col];
+          }
 
-        c[index] = sum;
+          c[index] = sum;
+        });
       });
-    });
+
+    }
+    
   } catch (sycl::exception const &e) {
     cout << "An exception is caught while multiplying matrices.\n";
     terminate();
