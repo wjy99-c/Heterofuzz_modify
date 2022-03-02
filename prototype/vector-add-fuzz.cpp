@@ -97,15 +97,17 @@ int VectorAdd(queue &q, const IntVector &a_vector, const IntVector &b_vector,
                                             if (sum[i]<0){MyDeviceToHostSideChannel::write(i);}//Undone: write need to be cleaned out
                                           });
   });
-  bool read_flag;
+  bool read_flag = true;
   int interested = 0;
-  for (int i = 0; i < 3; i++) {
+  int i = 0;
+  while (read_flag) do {
         // Blocking read an int from the pipe
         auto flag1 = MyDeviceToHostSideChannel::read(read_flag);
         if (!read_flag){ break;}
         else {
             interested = 1;
-            std::cout << MyDeviceToHostSideChannel::Data();
+            flag[i] = MyDeviceToHostSideChannel::read();
+            i++;
         }
       }
   //MyDeviceToHostSideChannel::Destroy(q);
