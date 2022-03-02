@@ -25,7 +25,7 @@
 #include <string>
 #include "FakeIOPipes.hpp"
 #include "HostSideChannel.hpp"
-
+#include <thread>
 
 #if FPGA || FPGA_EMULATOR
 #include <sycl/ext/intel/fpga_extensions.hpp>
@@ -129,7 +129,7 @@ void InitializeVector(IntVector &a) {
 }
 
 
-void mutate(IntVector &a, IntVector &b, int max_i){
+void mutate(IntVector &a, int max_i){
     srand(time(NULL) + rand());
     int knob = rand()%4+1;
     std::thread *threads = new std::thread[THREADS];
@@ -144,7 +144,7 @@ void mutate(IntVector &a, IntVector &b, int max_i){
         a[pos_i] = 0;
     }
     else if (knob==3){
-        int max_k = rand()% (max_i - pos_i)
+        int max_k = rand()% (max_i - pos_i);
         for (size_t k = pos_i; k < pos_i+max_k; k++){
             float value = (double)(rand()) / ((double)(RAND_MAX/MAX));
             a[k] = value;
@@ -228,7 +228,7 @@ int main(int argc, char* argv[]) {
     mutate(b, vector_size);
     if (interest==1) {
         std::string path_to_output(argv[1]);
-        write_file((path_to_output+"-"+to_string(file_number)).c_str(),a,b);
+        write_file((path_to_output+"-"+std::to_string(file_number)).c_str(),a,b);
     }
     
     }
