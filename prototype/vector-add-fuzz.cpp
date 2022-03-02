@@ -30,7 +30,9 @@
 #if FPGA || FPGA_EMULATOR
 #include <sycl/ext/intel/fpga_extensions.hpp>
 #endif
+const double MAX = 3400000000000000000000000.0;
 
+const int THREADS=4;
 struct DeviceToHostSideChannelID;
 struct SideChannelMainKernel;
 using MyDeviceToHostSideChannel = DeviceToHostSideChannel<DeviceToHostSideChannelID, int, true, 8>;
@@ -61,15 +63,19 @@ static auto exception_handler = [](sycl::exception_list e_list) {
 int VectorAdd(queue &q, const IntVector &a_vector, const IntVector &b_vector,
                IntVector &sum_parallel, IntVector &flag) {
   // Create the range object for the vectors managed by the buffer.
+  std::cout << "Vector size: \n";
   range<1> num_items{a_vector.size()};
   // Create buffers that hold the data shared between the host and the devices.
   // The buffer destructor is responsible to copy the data back to host when it
   // goes out of scope.
+  std::cout << "V1ector size: \n";
   buffer a_buf(a_vector);
+  std::cout << "V2ector size: \n";
   buffer b_buf(b_vector);
+  std::cout << "V3ector size: \n";
   buffer sum_buf(sum_parallel.data(), num_items);
   //buffer f_buf(flag.data(), num_items/2);
-  MyDeviceToHostSideChannel::Init(q);
+  
   // Submit a command group to the queue by a lambda function that contains the
   // data access permission and device computation (kernel).
   q.submit([&](handler &h) {
@@ -88,16 +94,19 @@ int VectorAdd(queue &q, const IntVector &a_vector, const IntVector &b_vector,
     //    work item. The parameter of the lambda is the work item id.
     // DPC++ supports unnamed lambda kernel by default.
     h.parallel_for(num_items, [=](auto i) { sum[i] = a[i] + b[i]; 
-                                            if (sum[i]<0){MyDeviceToHostSideChannel::write(i);}
+                                            if (sum[i]<0){MyDeviceToHostSideChannel::write(i);}//Undone: write need to be cleaned out
                                           });
   });
   bool read_flag;
   int interested = 0;
   for (int i = 0; i < 3; i++) {
         // Blocking read an int from the pipe
-        flag[i] = MyDeviceToHostSideChannel::read(read_flag);
+        auto flag1 = MyDeviceToHostSideChannel::read(read_flag);
         if (!read_flag){ break;}
-        else {interested = 1;}
+        else {
+            interested = 1;
+            std::cout << MyDeviceToHostSideChannel::Data();
+        }
       }
   //MyDeviceToHostSideChannel::Destroy(q);
   return interested;    
@@ -112,7 +121,7 @@ int write_file(const char *address, const IntVector &a, const IntVector &b){
       aa  = a[i];
       fprintf(f,"%d", aa);
     }
-    for (int i = 0; i < b.size(); k++) {
+    for (int i = 0; i < b.size(); i++) {
       aa = b[i];
       fprintf(f,"%d", aa);
     }
@@ -214,7 +223,7 @@ int main(int argc, char* argv[]) {
 
   try {
     queue q(d_selector, exception_handler);
-
+    MyDeviceToHostSideChannel::Init(q);
     for (int i = 0; i<6; i++){
     // Print out the device information used for the kernel code.
     std::cout << "Running on device: "
@@ -222,12 +231,12 @@ int main(int argc, char* argv[]) {
     std::cout << "Vector size: " << a.size() << "\n";
 
     // Vector addition in DPC++
-
+    
     int interest = VectorAdd(q, a, b, sum_parallel, flag);
     mutate(a, vector_size);
     mutate(b, vector_size);
     if (interest==1) {
-        std::string path_to_output(argv[1]);
+        std::string path_to_output(argv[2]);
         write_file((path_to_output+"-"+std::to_string(file_number)).c_str(),a,b);
     }
     
