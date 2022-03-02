@@ -63,21 +63,18 @@ static auto exception_handler = [](sycl::exception_list e_list) {
 int VectorAdd(queue &q, const IntVector &a_vector, const IntVector &b_vector,
                IntVector &sum_parallel, IntVector &flag) {
   // Create the range object for the vectors managed by the buffer.
-  std::cout << "Vector size: \n";
   range<1> num_items{a_vector.size()};
   // Create buffers that hold the data shared between the host and the devices.
   // The buffer destructor is responsible to copy the data back to host when it
   // goes out of scope.
-  std::cout << "V1ector size: \n";
   buffer a_buf(a_vector);
-  std::cout << "V2ector size: \n";
   buffer b_buf(b_vector);
-  std::cout << "V3ector size: \n";
   buffer sum_buf(sum_parallel.data(), num_items);
   //buffer f_buf(flag.data(), num_items/2);
   
   // Submit a command group to the queue by a lambda function that contains the
   // data access permission and device computation (kernel).
+  std::cout << "Kerenel start... \n";
   q.submit([&](handler &h) {
     // Create an accessor for each buffer with access permission: read, write or
     // read/write. The accessor is a mean to access the memory in the buffer.
@@ -93,24 +90,37 @@ int VectorAdd(queue &q, const IntVector &a_vector, const IntVector &b_vector,
     //    2nd parameter is the kernel, a lambda that specifies what to do per
     //    work item. The parameter of the lambda is the work item id.
     // DPC++ supports unnamed lambda kernel by default.
+    
     h.parallel_for(num_items, [=](auto i) { sum[i] = a[i] + b[i]; 
-                                            if (sum[i]<0){MyDeviceToHostSideChannel::write(i);}//Undone: write need to be cleaned out
-                                          });
+                                            if (sum[i]<0){
+                                                bool flag=true;
+                                                MyDeviceToHostSideChannel::write(i,flag); //Undo, write need to be cleaned out
+                                                if (flag) {sum[0]=sum[0]+1;}
+                                                }
+                                          }
+                  );
+    
   });
-  bool read_flag = true;
+  bool read_flag=true;
   int interested = 0;
-  int i = 0;
-  while (read_flag) do {
+  q.wait();
+  std::cout<<sum_parallel[0]<<" Overflow were found.\n";
+  for (int i = 0; i < sum_parallel[0]; i++) {
         // Blocking read an int from the pipe
-        auto flag1 = MyDeviceToHostSideChannel::read(read_flag);
-        if (!read_flag){ break;}
-        else {
+        //auto flag1 = MyDeviceToHostSideChannel::read(read_flag);
+        //if (!read_flag){ break;}
+        //else {
             interested = 1;
+            std::cout<<"start reading.\n";
             flag[i] = MyDeviceToHostSideChannel::read();
-            i++;
-        }
+            std::cout<<flag[i]<<" find an overflow\n";
+            
+            std::cout<<"read success.\n";
+            if (flag[i]==-1){break;}
+        //}
       }
-  //MyDeviceToHostSideChannel::Destroy(q);
+  std::cout<<"finish reading.\n";
+  
   return interested;    
   
 }
@@ -137,6 +147,7 @@ int write_file(const char *address, const IntVector &a, const IntVector &b){
 void InitializeVector(IntVector &a) {
   for (size_t i = 0; i < a.size(); i++) a.at(i) = i;
   a.at(2) = (1<<30) + 2000000;
+  a.at(3) = (1<<30) + 2000000;
 }
 
 
@@ -225,7 +236,7 @@ int main(int argc, char* argv[]) {
 
   try {
     queue q(d_selector, exception_handler);
-    MyDeviceToHostSideChannel::Init(q);
+    //MyDeviceToHostSideChannel::Init(q);
     for (int i = 0; i<6; i++){
     // Print out the device information used for the kernel code.
     std::cout << "Running on device: "
@@ -233,14 +244,44 @@ int main(int argc, char* argv[]) {
     std::cout << "Vector size: " << a.size() << "\n";
 
     // Vector addition in DPC++
-    
+    MyDeviceToHostSideChannel::Init(q);
+    a.at(0)=0;
+    b.at(0)=0;
     int interest = VectorAdd(q, a, b, sum_parallel, flag);
-    mutate(a, vector_size);
-    mutate(b, vector_size);
+    std::cout<<"start destroying the channel.\n";
+    MyDeviceToHostSideChannel::Destroy(q);
+    std::cout<<"finish destroying.\n";
+
+    int indices[]{0, 1, 2, (static_cast<int>(a.size()) - 1)};
+    constexpr size_t indices_size = sizeof(indices) / sizeof(int);
+    for (int i = 0; i < indices_size; i++) {
+        int j = indices[i];
+        if (i == indices_size - 1) std::cout << "...\n";
+        std::cout << "[" << j << "]: " << a[j] << " + " << b[j] << " = "
+          << sum_parallel[j] << " " << flag[i/2]<<"\n";
+      }
+    sum_parallel.at(0)=0;
+    
+      // Compute the sum of two vectors in sequential for validation.
+    for (size_t i = 0; i < sum_sequential.size(); i++)
+        sum_sequential.at(i) = a.at(i) + b.at(i);
+
+    // Verify that the two vectors are equal.  
+    for (size_t i = 0; i < sum_sequential.size(); i++) {
+      if (sum_parallel.at(i) != sum_sequential.at(i)) {
+        std::cout << "Vector add failed on device.\n";
+        interest = 1;
+      }
+    }
+    
     if (interest==1) {
         std::string path_to_output(argv[2]);
         write_file((path_to_output+"-"+std::to_string(file_number)).c_str(),a,b);
     }
+        
+    mutate(a, vector_size);
+    mutate(b, vector_size);
+    
     
     }
   } catch (exception const &e) {
@@ -248,17 +289,7 @@ int main(int argc, char* argv[]) {
     std::terminate();
   }
 
-  // Compute the sum of two vectors in sequential for validation.
-  for (size_t i = 0; i < sum_sequential.size(); i++)
-    sum_sequential.at(i) = a.at(i) + b.at(i);
 
-  // Verify that the two vectors are equal.  
-  for (size_t i = 0; i < sum_sequential.size(); i++) {
-    if (sum_parallel.at(i) != sum_sequential.at(i)) {
-      std::cout << "Vector add failed on device.\n";
-      return -1;
-    }
-  }
 
   int indices[]{0, 1, 2, (static_cast<int>(a.size()) - 1)};
   constexpr size_t indices_size = sizeof(indices) / sizeof(int);
