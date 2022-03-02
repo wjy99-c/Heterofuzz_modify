@@ -94,7 +94,7 @@ int VectorAdd(queue &q, const IntVector &a_vector, const IntVector &b_vector,
     h.parallel_for(num_items, [=](auto i) { sum[i] = a[i] + b[i]; 
                                             if (sum[i]<0){
                                                 bool flag=true;
-                                                MyDeviceToHostSideChannel::write(i,flag); //Undo, write need to be cleaned out
+                                                MyDeviceToHostSideChannel::write(i,flag); //Undo, write need to be cleaned out. Right now can only store for 8 overflow.
                                                 if (flag) {sum[0]=sum[0]+1;}
                                                 }
                                           }
