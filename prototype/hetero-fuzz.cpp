@@ -651,6 +651,10 @@ void write_to_test(std::string current_input, int interest){
       new_name = std::string(current_input) + "_both";
     }
     rename(current_input.c_str(), new_name.c_str());
+    std::string res_name;
+    res_name = std::string(current_input) + "_res";
+    char* save_output[] = {"result.txt",const_cast<char*>(res_name.c_str())};
+    execv("mv", save_output);
     memcpy(q->fname, new_name.c_str(), 256);
     input_queue.push_back(q);
   }
@@ -823,7 +827,12 @@ static void setup_shm(){
   if (!trace_bits) PFATAL("shmat() failed");
 }
 
+bool verify_result(){
 
+  
+
+  return true;
+}
 /* Main entry point */
 
 int main(int argc, char** argv) {
