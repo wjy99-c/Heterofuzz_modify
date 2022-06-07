@@ -653,8 +653,7 @@ void write_to_test(std::string current_input, int interest){
     rename(current_input.c_str(), new_name.c_str());
     std::string res_name;
     res_name = std::string(current_input) + "_res";
-    char* save_output[] = {"result.txt",const_cast<char*>(res_name.c_str())};
-    execv("mv", save_output);
+    int tmp = std::system(("mv "+current_input+" "+res_name).c_str());
     memcpy(q->fname, new_name.c_str(), 256);
     input_queue.push_back(q);
   }
@@ -739,7 +738,22 @@ void fuzzing(char* app, int iteration){
   }
 }
 
+bool verify_result(char* app, char* current_input, std::string res){
+  char* command_line[] = {app, current_input, NULL};
+  execv(app,command_line);
+  std::ifstream ifs("result.txt");
+  std::string content( (std::istreambuf_iterator<char>(ifs) ),
+                       (std::istreambuf_iterator<char>()    ) );
+  std::ifstream ans(res);
+  std::string answer( (std::istreambuf_iterator<char>(ans) ),
+                       (std::istreambuf_iterator<char>()    ) );
 
+  if (answer.compare(res)==0){
+    return true;
+  }
+
+  return false;
+}
 
 /* Perform dry run of all test cases to confirm that the app is working as
    expected. This is done only for the initial inputs, and only once. */
@@ -827,12 +841,6 @@ static void setup_shm(){
   if (!trace_bits) PFATAL("shmat() failed");
 }
 
-bool verify_result(){
-
-  
-
-  return true;
-}
 /* Main entry point */
 
 int main(int argc, char** argv) {
