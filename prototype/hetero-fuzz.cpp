@@ -97,7 +97,7 @@ static u16 count_class_lookup16[65536];
 static FILE* plot_file; 
 static bool hardware_enabled = 0;     /*enable kernel simulation*/
 static bool devcloud_fpga_enable = 0; /*enable devcloud fpga simulation*/
-static bool devcloud_fpga_hd_enable = 0;
+static bool devcloud_fpga_hd_enable = 1;
 static bool devcloud_gpu_enable = 0;  /*enable devcloud gpu*/
 static int current_max = 0;
 static double GFLOPS_max = 0;
@@ -373,11 +373,13 @@ int run_target(char* app, char mutated_input[]){
     exit(EXIT_FAILURE);
   }
 
-  std::string temp_simulation = "env BITSTREAM=a.aocx CL_CONTEXT_EMULATOR_DEVICE_INTELFPGA=1 INTEL_FPGA_OCL_PLATFORM_NAME=\"$EMULATOR_PLATFORM\" ./" + std::string(app) + std::string(" ") + std::string(argv[1]);
-  std::string temp_fpga = "env BITSTREAM=a.aocx INTEL_FPGA_OCL_PLATFORM_NAME=\"$HW_PLATFORM\" AOC_OPTION=\"-board=$FPGA_BOARD\" ./" + std::string(app) + std::string(" ") + std::string(argv[1]);
+  //std::string temp_simulation = "env BITSTREAM=a.aocx CL_CONTEXT_EMULATOR_DEVICE_INTELFPGA=1 INTEL_FPGA_OCL_PLATFORM_NAME=\"$EMULATOR_PLATFORM\" ./" + std::string(app) + std::string(" ") + std::string(argv[1]);
+  //std::string temp_fpga = "env BITSTREAM=a.aocx INTEL_FPGA_OCL_PLATFORM_NAME=\"$HW_PLATFORM\" AOC_OPTION=\"-board=$FPGA_BOARD\" ./" + std::string(app) + std::string(" ") + std::string(argv[1]);
+  std::string temp_fpga = "qsub -l nodes=s001-n085:ppn=2 " + std::string(app) + std::string(" ") + std::string(argv[1]);
+  std::string temp_gpu = "qsub -l nodes=1:gpu:ppn=2 " + std::string(app) + std::string(" ") + std::string(argv[1]);
   const char* execute = NULL;
   if (devcloud_fpga_enable) {
-    execute = temp_simulation.c_str();
+    execute = temp_fpga.c_str();
   }
   if (devcloud_fpga_hd_enable){
     execute = temp_fpga.c_str();
@@ -387,10 +389,12 @@ int run_target(char* app, char mutated_input[]){
     if (devcloud_fpga_enable) {
       //devcloud_fpga_simulation_exec(app,argv);
       
-      int a = std::system(execute);
+      int a = std::system(temp_fpga.c_str());
+      a = std::system(temp_gpu.c_str());
     }
     else if (devcloud_fpga_hd_enable){
-      int a = std::system(execute);
+      int a = std::system(temp_fpga.c_str());
+      a = std::system(temp_gpu.c_str());
     }
     else {
       execv(app, argv);
@@ -437,11 +441,13 @@ int run_target(char* app, char mutated_input[]){
   //  devcloud_gpu_exec(app,argv);
   //}
 
-  if (devcloud_fpga_enable) {
-    devcloud_fpga_exec(app,argv);
-  }
+  //if (devcloud_fpga_enable) {
+  //  devcloud_fpga_exec(app,argv);
+  //}
+
        
 }
+int check_execution_divergent();
 
 bool larger(std::string current, int max){
   if(max > atoi(current.c_str())){
@@ -564,15 +570,31 @@ int check_new_hardware(){
       ret_val = 1;
     }
   }
+  if (check_execution_divergent()==1) return 1;
   return ret_val;
+}
+
+bool verify_result(std::string output, std::string res){
+
+  std::ifstream ifs(output);
+  std::string content( (std::istreambuf_iterator<char>(ifs) ),
+                       (std::istreambuf_iterator<char>()    ) );
+  std::ifstream ans(res);
+  std::string answer( (std::istreambuf_iterator<char>(ans) ),
+                       (std::istreambuf_iterator<char>()    ) );
+
+  if (answer.compare(res)==0){
+    return true;
+  }
+  
+  return false;
 }
 
 int check_execution_divergent(){
   int ret_val;
-  if (devcloud_fpga_enable){
-    std::ifstream ifs("exec_time.tx");
-    
-  }
+  if (!verify_result("gpu.txt","fpga_simulation.txt")) return 1;
+  if (!verify_result("gpu.txt","fpga.txt")) return 1;
+  return 0;
 }
 
 int check_performance_divergent(){
@@ -738,22 +760,6 @@ void fuzzing(char* app, int iteration){
   }
 }
 
-bool verify_result(char* app, char* current_input, std::string res){
-  char* command_line[] = {app, current_input, NULL};
-  execv(app,command_line);
-  std::ifstream ifs("result.txt");
-  std::string content( (std::istreambuf_iterator<char>(ifs) ),
-                       (std::istreambuf_iterator<char>()    ) );
-  std::ifstream ans(res);
-  std::string answer( (std::istreambuf_iterator<char>(ans) ),
-                       (std::istreambuf_iterator<char>()    ) );
-
-  if (answer.compare(res)==0){
-    return true;
-  }
-
-  return false;
-}
 
 /* Perform dry run of all test cases to confirm that the app is working as
    expected. This is done only for the initial inputs, and only once. */
