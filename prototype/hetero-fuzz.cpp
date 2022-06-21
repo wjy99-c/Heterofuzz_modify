@@ -311,7 +311,6 @@ std::string mutate(int fuzzing_iteration, std::string current_input){
     }
     printf("selected pos: %d\n", pos);
     content[pos] = new_value;
-    printf("%s\nend",content.c_str());
   }
   else if(knob == 2){
     content = random_append_number(content);
@@ -510,28 +509,8 @@ int check_new_hardware(){
     }
 
   }
-  if (devcloud_fpga_enable){
-    std::ifstream inFile;
-    inFile.open("exec_time.txt");
-    double exec_time=406;
-    if (!inFile.is_open()){
-            std::cout<<"can't open file\n";
-    }
-    inFile >> exec_time;
-    inFile.close();
-    printf("TIME MAX%lf\n",time_max);
-    printf("fpga simulation enabled time:%lf\n",exec_time);
-    if(exec_time>time_max){
-      time_max = exec_time;
-      printf("TIME MAX%lf\n",time);
-      ret_val = 1;
-    }
-    else {
-      ret_val=0;
-    }
-  }
 
-  if (devcloud_fpga_hd_enable){
+  if (devcloud_fpga_hd_enable or devcloud_fpga_enable){
     std::ifstream inFile;
     inFile.open("exec_fpga_info.txt");
     if (!inFile.is_open()){
@@ -576,7 +555,7 @@ int check_new_hardware(){
 }
 
 bool verify_result(std::string output, std::string res){
-
+  printf("%s", "check results across different platform...");
   std::ifstream ifs(output);
   std::string content( (std::istreambuf_iterator<char>(ifs) ),
                        (std::istreambuf_iterator<char>()    ) );
@@ -587,14 +566,14 @@ bool verify_result(std::string output, std::string res){
   if (answer.compare(res)==0){
     return true;
   }
-  
+  printf("%s", "divergent results across different platform!");
   return false;
 }
 
 int check_execution_divergent(){
   int ret_val;
   if (!verify_result("gpu.txt","fpga_simulation.txt")) return 1;
-  if (!verify_result("gpu.txt","fpga.txt")) return 1;
+  //if (!verify_result("gpu.txt","fpga.txt")) return 1;
   return 0;
 }
 
@@ -674,9 +653,6 @@ void write_to_test(std::string current_input, int interest){
       new_name = std::string(current_input) + "_both";
     }
     rename(current_input.c_str(), new_name.c_str());
-    std::string res_name;
-    res_name = std::string(current_input) + "_res";
-    int tmp = std::system(("mv "+current_input+" "+res_name).c_str());
     memcpy(q->fname, new_name.c_str(), 256);
     input_queue.push_back(q);
   }
