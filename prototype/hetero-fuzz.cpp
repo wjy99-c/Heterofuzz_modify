@@ -375,8 +375,8 @@ int run_target(char* app, char mutated_input[]){
 
   //std::string temp_simulation = "env BITSTREAM=a.aocx CL_CONTEXT_EMULATOR_DEVICE_INTELFPGA=1 INTEL_FPGA_OCL_PLATFORM_NAME=\"$EMULATOR_PLATFORM\" ./" + std::string(app) + std::string(" ") + std::string(argv[1]);
   //std::string temp_fpga = "env BITSTREAM=a.aocx INTEL_FPGA_OCL_PLATFORM_NAME=\"$HW_PLATFORM\" AOC_OPTION=\"-board=$FPGA_BOARD\" ./" + std::string(app) + std::string(" ") + std::string(argv[1]);
-  std::string temp_fpga = "qsub -l nodes=s001-n085:ppn=2 " + std::string(app) + std::string("-fpga.sh ") + std::string(argv[1]);
-  std::string temp_gpu = "qsub -l nodes=1:gpu:ppn=2 " + std::string(app) + std::string("-gpu.sh ") + std::string(argv[1]);
+  std::string temp_fpga = "qsub -l nodes=s001-n085:ppn=2 " + std::string(app) + std::string("-fpga.sh -v") + std::string(argv[1]);
+  std::string temp_gpu = "qsub -l nodes=1:gpu:ppn=2 " + std::string(app) + std::string("-gpu.sh -v") + std::string(argv[1]);
   const char* execute = NULL;
   if (devcloud_fpga_enable) {
     execute = temp_fpga.c_str();
@@ -403,6 +403,7 @@ int run_target(char* app, char mutated_input[]){
     *(u32*)trace_bits = EXEC_FAIL_SIG;
     exit(0);
   }
+  sleep(30);
 
   pid_t ret;
   ret = waitpid(child_pid, &status, 0);
@@ -848,10 +849,11 @@ static void setup_shm(){
 }
 
 /* Main entry point */
+//undone: first run + output file in target application + add .sh and figure out path
 
 int main(int argc, char** argv) {
 
-  SAYF(cCYA "random-fuzz " cBRI VERSION cRST " by <zhangqian@cs.ucla.edu>\n");
+  SAYF(cCYA "differential-testing-fuzz " cBRI VERSION cRST " by <wangjiyuan@cs.ucla.edu>\n");
 
   memset(in_dir, 0, 256);
   memset(out_dir, 0, 256);
